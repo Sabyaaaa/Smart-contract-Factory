@@ -1,3 +1,5 @@
+// ***************** DEPLOYMENT USING SIMPLE HSCS **********************
+
 const { Client, AccountId, PrivateKey, ContractCreateTransaction } = require("@hashgraph/sdk");
 require("dotenv").config();
 const fs = require("fs");
@@ -20,7 +22,7 @@ async function deployFactoryContract() {
   console.log("bytecode is fine");
   // Create a new contract instance
   const contractInstantiateTx = await new ContractCreateTransaction()
-    .setGas(800000)
+    .setGas(300000)
     .setBytecode(factoryBytecode);
 
   const contractInstantiateSubmit = await contractInstantiateTx.execute(client);

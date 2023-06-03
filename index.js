@@ -1,80 +1,89 @@
-// ***************** DEPLOYMENT USING SIMPLE HSCS **********************
-
-const { Client, AccountId, PrivateKey, ContractCreateTransaction } = require("@hashgraph/sdk");
+const {
+  AccountId,
+  PrivateKey,
+  Client,
+  ContractCreateFlow,
+  ContractExecuteTransaction,
+  ContractFunctionParameters,
+  ContractCallQuery,
+  Hbar,
+} = require("@hashgraph/sdk");
 require("dotenv").config();
 const fs = require("fs");
 
-async function deployFactoryContract() {
-  // Hedera Testnet account details
-  const operatorAccount = AccountId.fromString(process.env.MY_ACCOUNT_ID);
-  const operatorPrivateKey = PrivateKey.fromString(process.env.MY_PRIVATE_KEY);
+// Configure accounts and keys (testnet credentials)
+const operatorId = AccountId.fromString(process.env.MY_ACCOUNT_ID);
+const operatorPrivateKey = PrivateKey.fromString(process.env.MY_PRIVATE_KEY);
 
-  if (operatorPrivateKey == null || operatorAccount == null) {
-    throw new Error("Env variables cannot be null");
-  }
-  console.log("ID and keys are fine");
-  // Create a new Hedera client
-  const client = Client.forTestnet();
-  client.setOperator(operatorAccount, operatorPrivateKey);
-
-  // Read the bytecode of the factory contract
-  const factoryBytecode = fs.readFileSync("FactoryContract_sol_FactoryContract.bin").toString();
-  console.log("bytecode is fine");
-  // Create a new contract instance
-  const contractInstantiateTx = await new ContractCreateTransaction()
-    .setGas(300000)
-    .setBytecode(factoryBytecode);
-
-  const contractInstantiateSubmit = await contractInstantiateTx.execute(client);
-  console.log("ContractCreateTransaction is fine");
-  const contractInstantiateRx = await contractInstantiateSubmit.getReceipt(client);
-  console.log("getReceipt is fine");
-  const contractId = contractInstantiateRx.getContractId;
-  console.log("contract id is fine");
-  const contractAddress = contractId.toSolidityAddress();
-  console.log("hi");
-  console.log(`- The smart contract ID is: ${contractId} \n`);
-  console.log(`- The smart contract ID in Solidity format is: ${contractAddress} \n`);
-
-  // Deploy the Child Contract
-  console.info("========== Deploying Child Contract ===========");
-  // Import the bytecode and ABI of the child contract
-  const childByteCode = fs.readFileSync("ChildContract_sol_ChildContract.bin").toString();
-  // const childAbi = JSON.parse(fs.readFileSync("ChildContract_sol_ChildContract.json"));
-
-  // Create a new ContractCreateTransaction for the Child Contract
-  const childInstantiateTx = new ContractCreateTransaction()
-    .setBytecode(childByteCode)
-    .setGas(100000)
-    .setConstructorParams([ContractFunctionParameters.fromUint256(0)]);
-  const childInstantiateSubmit = await childInstantiateTx.execute(client);
-  const childInstantiateRx = await childInstantiateSubmit.getReceipt(client);
-  const childContractId = childInstantiateRx.contractId;
-  const childContractAddress = childContractId.toString();
-  console.log(`- Child Contract deployed with ID: ${childContractId}`);
-
-  // Call the createContract function of the Factory Contract to link it with the Child Contract
-  console.info("========== Calling Factory Contract createContract Function ===========");
-  const factoryContractExecuteTx = new ContractExecuteTransaction()
-    .setContractId(factoryContractId)
-    .setGas(100000)
-    .setFunction("createContract", [ContractFunctionParameters.fromUint256(0)]);
-  const factoryContractExecuteSubmit = await factoryContractExecuteTx.execute(client);
-  const factoryContractExecuteRx = await factoryContractExecuteSubmit.getReceipt(client);
-  console.log("- Factory Contract createContract function executed successfully");
-
-  // Get the deployed Child Contracts from the Factory Contract
-  // console.info("========== Calling Factory Contract getDeployedContracts Function ===========");
-  // const factoryContractCallQuery = new ContractCallQuery()
-  //   .setContractId(factoryContractId)
-  //   .setGas(100000)
-  //   .setFunction("getDeployedContracts");
-  // const factoryContractCallSubmit = await factoryContractCallQuery.execute(client);
-  // const deployedContracts = factoryContractCallSubmit.get<ChildContract[]>(0);
-  // console.log("- Deployed Child Contracts:");
-  // deployedContracts.forEach((contract) => {
-  //   console.log(contract.toString());
-  // });
+if (operatorId == null || operatorPrivateKey == null) {
+  throw new Error("Environment variables OPERATOR_ID and OPERATOR_KEY are required.");
 }
 
-deployFactoryContract().catch(console.error);
+const client = Client.forTestnet().setOperator(operatorId, operatorPrivateKey);
+
+async function main() {
+  // Deploy the Factory Contract
+  console.info("========== Deploying Factory Contract ===========");
+  const factoryContractByteCode = fs.readFileSync("FactoryContract_sol_FactoryContract.bin", "utf8");
+
+  const factoryContractInstantiateTx = new ContractCreateFlow()
+      .setBytecode(factoryContractByteCode)
+      .setGas(100000);
+
+  const factoryContractInstantiateSubmit = await factoryContractInstantiateTx.execute(client);
+  const factoryContractInstantiateRx = await factoryContractInstantiateSubmit.getReceipt(client);
+  const factoryContractId = factoryContractInstantiateRx.contractId;
+  const factoryContractAddress = factoryContractId.toSolidityAddress();
+
+  console.log(`- The Factory Contract ID is: ${factoryContractId}`);
+  console.log(`- The Factory Contract address in Solidity format is: ${factoryContractAddress}`);
+  console.log("================================================");
+
+  // Deploy the Child Contract using the Factory Contract
+  console.info("========== Deploying Child Contract ===========");
+  const childContractCreateFunctionParams = new ContractFunctionParameters()
+      .addUint256(30); // Pass the initial value for the Child Contract
+
+  const childContractCreateTx = new ContractExecuteTransaction()
+      .setContractId(factoryContractId)
+      .setGas(1000000)
+      .setFunction("createContract", childContractCreateFunctionParams);
+
+  const childContractCreateSubmit = await childContractCreateTx.execute(client);
+  const childContractCreateRx = await childContractCreateSubmit.getReceipt(client);
+  const childContractId = childContractCreateRx.contractId;
+  const childContractAddress = childContractId.toSolidityAddress();
+
+  console.log(`- The Child Contract ID is: ${childContractId}`);
+  console.log(`- The Child Contract address in Solidity format is: ${childContractAddress}`);
+  console.log("================================================");
+
+  // Call the getDeployedContracts function of the Factory Contract
+  console.info("========== Calling Factory Contract getDeployedContracts Function ===========");
+  const factoryContractQueryTx = new ContractCallQuery()
+      .setContractId(factoryContractId)
+      .setGas(100000)
+      .setFunction("getDeployedContracts");
+
+  const factoryContractQuerySubmit = await factoryContractQueryTx.execute(client);
+  const deployedContracts = factoryContractQuerySubmit.getString(0);
+  console.log("- Deployed Contracts:", deployedContracts);
+  console.log("================================================");
+
+  // Call the getValue function of the Child Contract
+  console.info("========== Calling Child Contract getValue Function ===========");
+  const childContractQueryTx = new ContractCallQuery()
+      .setContractId(childContractId)
+      .setGas(100000)
+      .setFunction("getValue");
+
+  const childContractQuerySubmit = await childContractQueryTx.execute(client);
+  const childValue = childContractQuerySubmit.getUint256(0);
+  console.log("- Child Contract Value:", childValue);
+  console.log("================================================");
+
+  process.exit();
+}
+
+// Call the async function
+main();
